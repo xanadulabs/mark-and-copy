@@ -1,0 +1,98 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --line: #c8c8c8;
+  --focus: #005fcc;
+  --muted: #595959;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1c;
+    --fg: #f2f2f2;
+    --line: #5a5a5a;
+    --focus: #8cb4ff;
+    --muted: #c4c4c4;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 320px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 18px/1.3 system-ui, sans-serif;
+}
+
+header {
+  padding: 12px 16px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+h1,
+#status {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+#status {
+  margin-top: 4px;
+  font-size: 18px;
+}
+
+button {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 16px;
+  text-align: left;
+  font: 18px/1.2 system-ui, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+button:disabled {
+  color: var(--muted);
+  border-top: 3px dashed var(--fg);
+}
+
+button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
+
+@media (forced-colors: active) {
+  header,
+  h1,
+  #status,
+  button {
+    background: Canvas;
+    color: CanvasText;
+    border-color: CanvasText;
+  }
+
+  button:disabled {
+    color: GrayText;
+    border-top-color: CanvasText;
+  }
+
+  button:focus-visible {
+    outline-color: Highlight;
+  }
+}
