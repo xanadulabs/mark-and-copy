@@ -1,5 +1,8 @@
 (function () {
   const HIGHLIGHT = [204, 255, 51];
+  // A highlight box is not a click target, so it does not use the 44 pixel rule.
+  // One line of text is about 20 pixels tall. This only stops a double click on one spot.
+  const MIN_BOX = 4;
   const math = globalThis.MarkAndCopyMath;
   const statusNode = document.querySelector("#status");
   const view = document.querySelector("#view");
@@ -19,8 +22,6 @@
   let imageWidth = 0;
   let imageHeight = 0;
   let ready = false;
-  let cursorTimer = 0;
-  let cursorFrame = 0;
 
   function pngCursor(width, height, hotX, hotY, draw) {
     const canvas = document.createElement("canvas");
@@ -125,14 +126,11 @@
     return {
       tool: toolName,
       count: marks.length,
-      hasSelection: ready,
       status: status
     };
   }
 
   function applyCursor() {
-    window.clearInterval(cursorTimer);
-    cursorTimer = 0;
     let cursor = bingoCursor(marks.length);
     if (toolName === "highlighter") {
       cursor = highlighterCursor;
@@ -251,7 +249,7 @@
     clearBand();
     applyCursor();
     if (toolName === "highlighter") {
-      setStatus("Click one corner of the box. Cover the mark to take it off.");
+      setStatus("Click one corner of the box. Cover a highlight to take it off.");
     } else if (toolName === "score") {
       setStatus("Click the picture to place the score.");
     } else {
@@ -302,12 +300,12 @@
       corner.hidden = false;
       corner.style.left = (event.clientX - body.left) + "px";
       corner.style.top = (event.clientY - body.top) + "px";
-      setStatus("Click the other corner of the box. Cover the mark to take it off.");
+      setStatus("Click the other corner of the box. Cover a highlight to take it off.");
       return;
     }
     const cssW = Math.abs(event.clientX - firstClient.x);
     const cssH = Math.abs(event.clientY - firstClient.y);
-    if (cssW < 44 || cssH < 44) {
+    if (cssW < MIN_BOX || cssH < MIN_BOX) {
       setStatus("Click a corner farther away.");
       return;
     }
@@ -324,7 +322,7 @@
       }
     }
     recompose();
-    setStatus("Click one corner of the box. Cover the mark to take it off.");
+    setStatus("Click one corner of the box. Cover a highlight to take it off.");
   });
 
   function copyPicture() {
@@ -378,31 +376,6 @@
       sendResponse(state());
       return false;
     }
-    if (message.type === "copy") {
-      if (!ready) {
-        sendResponse({ ok: false, status: status });
-        return false;
-      }
-      copyPicture().then(
-        () => sendResponse({ ok: true, status: "Copied." }),
-        () => sendResponse({ ok: false, status: "Copy did not work. Press Esc." })
-      );
-      return true;
-    }
-    if (message.type === "close") {
-      if (!ready) {
-        sendResponse(state());
-        window.close();
-        return false;
-      }
-      finishCopy().then((copied) => {
-        sendResponse(copied ? { ok: true, status: "Copied." } : { ok: false, status: status });
-        if (copied) {
-          window.close();
-        }
-      });
-      return true;
-    }
     return false;
   });
 
@@ -432,16 +405,41 @@
     event.preventDefault();
   });
 
+  function layout() {
+    if (!(imageWidth > 0) || !(imageHeight > 0)) {
+      return;
+    }
+    const roomW = Math.max(1, window.innerWidth);
+    const roomH = Math.max(1, window.innerHeight);
+    const scale = Math.min(roomW / imageWidth, roomH / imageHeight);
+    const width = Math.max(1, Math.floor(imageWidth * scale));
+    const height = Math.max(1, Math.floor(imageHeight * scale));
+    view.style.width = width + "px";
+    view.style.height = height + "px";
+    view.style.left = Math.floor((roomW - width) / 2) + "px";
+    view.style.top = Math.floor((roomH - height) / 2) + "px";
+    if (firstClient) {
+      // The first corner moved with the picture. Start the box again.
+      useTool(toolName);
+    }
+  }
+
   function fitWindow() {
-    const availW = Math.max(44, screen.availWidth - 8);
-    const availH = Math.max(44, screen.availHeight - 48);
-    const scale = Math.min(1, availW / imageWidth, availH / imageHeight);
-    const outerW = Math.max(44, Math.round(imageWidth * scale));
-    const outerH = Math.max(44, Math.round(imageHeight * scale));
+    // windows.update sets the outer size. Add the title bar and borders so the
+    // picture itself gets its own size.
+    const frameW = Math.max(0, window.outerWidth - window.innerWidth);
+    const frameH = Math.max(0, window.outerHeight - window.innerHeight);
+    const roomW = Math.max(44, screen.availWidth - frameW);
+    const roomH = Math.max(44, screen.availHeight - frameH);
+    const scale = Math.min(1, roomW / imageWidth, roomH / imageHeight);
+    const outerW = Math.round(imageWidth * scale) + frameW;
+    const outerH = Math.round(imageHeight * scale) + frameH;
     browser.windows.getCurrent().then((win) => {
       return browser.windows.update(win.id, { width: outerW, height: outerH, focused: true });
     }).catch(() => {});
   }
+
+  window.addEventListener("resize", layout);
 
   function openPicture(dataUrl, tool) {
     const image = new Image();
@@ -459,6 +457,7 @@
       highlight = new Uint8Array(imageWidth * imageHeight);
       bingo = new Uint8Array(imageWidth * imageHeight);
       ready = true;
+      layout();
       stagePicture();
       fitWindow();
       useTool(tool === "bingo" ? "bingo" : "highlighter");

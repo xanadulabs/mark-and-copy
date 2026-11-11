@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Mark and Copy",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Select part of the screen, mark it, and copy the picture.",
   "browser_specific_settings": {
     "gecko": {

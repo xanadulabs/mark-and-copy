@@ -63,7 +63,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         ok: true,
         tool: tool,
         count: 0,
-        hasSelection: false,
         status: "Click one corner."
       });
       window.setTimeout(() => {
@@ -72,7 +71,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
-  if (message.type === "score" || message.type === "copy" || message.type === "close") {
+  if (message.type === "score") {
     route(message).then(sendResponse, (error) => {
       sendResponse({ ok: false, error: String(error), status: idleStatus });
     });
@@ -130,7 +129,6 @@ function selectState() {
   return {
     tool: selectTool,
     count: 0,
-    hasSelection: false,
     status: selectStatus
   };
 }
@@ -139,7 +137,6 @@ function idleState() {
   return {
     tool: "",
     count: 0,
-    hasSelection: false,
     status: idleStatus
   };
 }

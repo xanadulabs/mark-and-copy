@@ -4,7 +4,6 @@
   --fg: #1a1a1a;
   --line: #c8c8c8;
   --focus: #005fcc;
-  --muted: #595959;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -13,7 +12,6 @@
     --fg: #f2f2f2;
     --line: #5a5a5a;
     --focus: #8cb4ff;
-    --muted: #c4c4c4;
   }
 }
 
@@ -67,11 +65,6 @@ button {
   border-top: 1px solid var(--line);
 }
 
-button:disabled {
-  color: var(--muted);
-  border-top: 3px dashed var(--fg);
-}
-
 button:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: -3px;
@@ -85,11 +78,6 @@ button:focus-visible {
     background: Canvas;
     color: CanvasText;
     border-color: CanvasText;
-  }
-
-  button:disabled {
-    color: GrayText;
-    border-top-color: CanvasText;
   }
 
   button:focus-visible {

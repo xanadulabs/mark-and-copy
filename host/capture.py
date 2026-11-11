@@ -40,18 +40,19 @@ def read_message():
     return json.loads(body.decode("utf-8"))
 
 
-def screen_box(x1, y1, x2, y2, scale, minimum=MINIMUM_CSS):
+def screen_box(x1, y1, x2, y2, minimum=MINIMUM_CSS):
+    # GDK 3 gives event and root sizes in logical pixels, and
+    # pixbuf_get_from_window takes logical pixels and returns device pixels.
+    # So no scale factor is applied here.
     css_w = abs(x2 - x1)
     css_h = abs(y2 - y1)
     if css_w < minimum or css_h < minimum:
         return None
-    left = min(x1, x2) * scale
-    top = min(y1, y2) * scale
     return (
-        int(round(left)),
-        int(round(top)),
-        max(1, int(round(css_w * scale))),
-        max(1, int(round(css_h * scale))),
+        int(round(min(x1, x2))),
+        int(round(min(y1, y2))),
+        max(1, int(round(css_w))),
+        max(1, int(round(css_h))),
     )
 
 
@@ -122,9 +123,8 @@ def select_rect():
     root = Gdk.get_default_root_window()
     if root is None:
         raise RuntimeError("no screen")
-    scale = root.get_scale_factor() or 1
-    width = max(1, root.get_width() // scale)
-    height = max(1, root.get_height() // scale)
+    width = max(1, root.get_width())
+    height = max(1, root.get_height())
     screen = Gdk.Screen.get_default()
     visual = screen.get_rgba_visual() if screen is not None else None
     if visual is None:
@@ -157,10 +157,12 @@ def select_rect():
         current = hover["point"]
         if point is None or current is None:
             return False
-        left = min(point[0], current[0])
-        top = min(point[1], current[1])
-        box_w = abs(current[0] - point[0])
-        box_h = abs(current[1] - point[1])
+        # Draw the marquee outside the box so none of it is inside the copy.
+        gap = 3
+        left = min(point[0], current[0]) - gap
+        top = min(point[1], current[1]) - gap
+        box_w = abs(current[0] - point[0]) + gap * 2
+        box_h = abs(current[1] - point[1]) + gap * 2
         context.set_line_width(5)
         context.set_source_rgb(0x1a / 255, 0x1a / 255, 0x1a / 255)
         context.rectangle(left, top, box_w, box_h)
@@ -200,7 +202,7 @@ def select_rect():
             send({"ok": True, "event": "status", "text": "Click the other corner."})
             win.queue_draw()
             return True
-        rect = screen_box(first["point"][0], first["point"][1], event.x, event.y, scale)
+        rect = screen_box(first["point"][0], first["point"][1], event.x, event.y)
         if rect is None:
             send({"ok": True, "event": "status", "text": "Click a corner farther away."})
             return True
@@ -268,7 +270,10 @@ def select_rect():
         Gtk.main_iteration_do(False)
     Gdk.flush()
     if outcome["rect"] is not None:
-        time.sleep(0.05)
+        # Give the compositor time to take the window off the screen.
+        time.sleep(0.15)
+        while Gtk.events_pending():
+            Gtk.main_iteration_do(False)
     win.destroy()
     if outcome["cancel"] or outcome["rect"] is None:
         return None

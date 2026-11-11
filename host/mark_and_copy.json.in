@@ -1,0 +1,9 @@
+{
+  "name": "mark_and_copy",
+  "description": "Copy a screen rectangle.",
+  "path": "@CAPTURE_PY@",
+  "type": "stdio",
+  "allowed_extensions": [
+    "mark-and-copy@hierophant.local"
+  ]
+}
