@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
-"""Copy one screen rectangle and return a PNG. No window. No file."""
+"""Copy one screen rectangle and return a PNG. No file is saved.
+
+The grab command copies a rectangle and does not open a window.
+The select command opens one transparent window. Two clicks set the
+corners. Esc closes it and copies nothing.
+"""
 
 import base64
 import json
 import struct
 import sys
+import time
 
 import gi
 
 gi.require_version("Gdk", "3.0")
-from gi.repository import Gdk
+from gi.repository import Gdk, GLib
+
+MINIMUM_CSS = 44
 
 
 def send(obj):
@@ -32,11 +40,34 @@ def read_message():
     return json.loads(body.decode("utf-8"))
 
 
-def capture(message):
-    x = int(message["x"])
-    y = int(message["y"])
-    width = int(message["width"])
-    height = int(message["height"])
+def screen_box(x1, y1, x2, y2, scale, minimum=MINIMUM_CSS):
+    css_w = abs(x2 - x1)
+    css_h = abs(y2 - y1)
+    if css_w < minimum or css_h < minimum:
+        return None
+    left = min(x1, x2) * scale
+    top = min(y1, y2) * scale
+    return (
+        int(round(left)),
+        int(round(top)),
+        max(1, int(round(css_w * scale))),
+        max(1, int(round(css_h * scale))),
+    )
+
+
+def send_png(image):
+    ok, buf = image.save_to_bufferv("png", [], [])
+    if not ok:
+        raise RuntimeError("png failed")
+    encoded = base64.b64encode(buf).decode("ascii")
+    chunk = 400000
+    parts = [encoded[i:i + chunk] for i in range(0, len(encoded), chunk)] or [""]
+    count = len(parts)
+    for index, part in enumerate(parts):
+        send({"ok": True, "index": index, "count": count, "data": part})
+
+
+def grab_rect(x, y, width, height):
     if width < 1 or height < 1:
         raise ValueError("empty rectangle")
     window = Gdk.get_default_root_window()
@@ -59,15 +90,189 @@ def capture(message):
     image = Gdk.pixbuf_get_from_window(window, x, y, width, height)
     if image is None:
         raise RuntimeError("screen copy failed")
-    ok, buf = image.save_to_bufferv("png", [], [])
-    if not ok:
-        raise RuntimeError("png failed")
-    encoded = base64.b64encode(buf).decode("ascii")
-    chunk = 400000
-    parts = [encoded[i:i + chunk] for i in range(0, len(encoded), chunk)] or [""]
-    count = len(parts)
-    for index, part in enumerate(parts):
-        send({"ok": True, "index": index, "count": count, "data": part})
+    send_png(image)
+
+
+def marquee_cursor(dash_offset):
+    import cairo
+
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 32, 32)
+    context = cairo.Context(surface)
+    context.set_line_width(5)
+    context.set_source_rgb(0x1a / 255, 0x1a / 255, 0x1a / 255)
+    context.rectangle(4.5, 4.5, 22, 22)
+    context.stroke()
+    context.set_line_width(3)
+    context.set_source_rgb(1, 1, 1)
+    context.rectangle(4.5, 4.5, 22, 22)
+    context.stroke()
+    context.set_line_width(2)
+    context.set_dash([6, 4], dash_offset)
+    context.set_source_rgb(0, 0x5f / 255, 0xcc / 255)
+    context.rectangle(4.5, 4.5, 22, 22)
+    context.stroke()
+    return Gdk.pixbuf_get_from_surface(surface, 0, 0, 32, 32)
+
+
+def select_rect():
+    gi.require_version("Gtk", "3.0")
+    import cairo
+    from gi.repository import Gtk
+
+    root = Gdk.get_default_root_window()
+    if root is None:
+        raise RuntimeError("no screen")
+    scale = root.get_scale_factor() or 1
+    width = max(1, root.get_width() // scale)
+    height = max(1, root.get_height() // scale)
+    screen = Gdk.Screen.get_default()
+    visual = screen.get_rgba_visual() if screen is not None else None
+    if visual is None:
+        raise RuntimeError("no transparent screen")
+
+    outcome = {"rect": None, "cancel": False, "done": False}
+    first = {"point": None}
+    hover = {"point": None}
+    frame = {"n": 0}
+
+    win = Gtk.Window(type=Gtk.WindowType.POPUP)
+    win.set_app_paintable(True)
+    win.set_visual(visual)
+    win.set_default_size(width, height)
+    win.move(0, 0)
+    win.set_can_focus(True)
+    win.set_accept_focus(True)
+    win.add_events(
+        Gdk.EventMask.BUTTON_PRESS_MASK
+        | Gdk.EventMask.POINTER_MOTION_MASK
+        | Gdk.EventMask.KEY_PRESS_MASK
+    )
+
+    def paint(_widget, context):
+        context.set_operator(cairo.OPERATOR_SOURCE)
+        context.set_source_rgba(0, 0, 0, 0)
+        context.paint()
+        context.set_operator(cairo.OPERATOR_OVER)
+        point = first["point"]
+        current = hover["point"]
+        if point is None or current is None:
+            return False
+        left = min(point[0], current[0])
+        top = min(point[1], current[1])
+        box_w = abs(current[0] - point[0])
+        box_h = abs(current[1] - point[1])
+        context.set_line_width(5)
+        context.set_source_rgb(0x1a / 255, 0x1a / 255, 0x1a / 255)
+        context.rectangle(left, top, box_w, box_h)
+        context.stroke()
+        context.set_line_width(3)
+        context.set_source_rgb(1, 1, 1)
+        context.rectangle(left, top, box_w, box_h)
+        context.stroke()
+        context.set_line_width(2)
+        context.set_dash([8, 6], frame["n"] * 4)
+        context.set_source_rgb(0, 0x5f / 255, 0xcc / 255)
+        context.rectangle(left, top, box_w, box_h)
+        context.stroke()
+        return False
+
+    def on_motion(_widget, event):
+        if first["point"] is None:
+            return False
+        hover["point"] = (event.x, event.y)
+        win.queue_draw()
+        return False
+
+    def finish(cancel, rect):
+        if outcome["done"]:
+            return
+        outcome["done"] = True
+        outcome["cancel"] = cancel
+        outcome["rect"] = rect
+        Gtk.main_quit()
+
+    def on_button(_widget, event):
+        if event.button != 1:
+            return True
+        if first["point"] is None:
+            first["point"] = (event.x, event.y)
+            hover["point"] = (event.x, event.y)
+            send({"ok": True, "event": "status", "text": "Click the other corner."})
+            win.queue_draw()
+            return True
+        rect = screen_box(first["point"][0], first["point"][1], event.x, event.y, scale)
+        if rect is None:
+            send({"ok": True, "event": "status", "text": "Click a corner farther away."})
+            return True
+        finish(False, rect)
+        return True
+
+    def on_key(_widget, event):
+        if event.keyval == Gdk.KEY_Escape:
+            finish(True, None)
+            return True
+        return False
+
+    def on_stdin(_source, _condition):
+        finish(True, None)
+        return False
+
+    win.connect("draw", paint)
+    win.connect("motion-notify-event", on_motion)
+    win.connect("button-press-event", on_button)
+    win.connect("key-press-event", on_key)
+    win.connect("delete-event", lambda *_args: finish(True, None) or True)
+    GLib.io_add_watch(sys.stdin.fileno(), GLib.IO_HUP | GLib.IO_ERR, on_stdin)
+
+    cursors = []
+    display = Gdk.Display.get_default()
+    for offset in (0, 6):
+        pixbuf = marquee_cursor(offset)
+        cursors.append(Gdk.Cursor.new_from_pixbuf(display, pixbuf, 4, 4))
+
+    def animate():
+        if outcome["done"]:
+            return True
+        frame["n"] = (frame["n"] + 1) % 2
+        gdk_window = win.get_window()
+        if gdk_window is not None:
+            gdk_window.set_cursor(cursors[frame["n"]])
+        if first["point"] is not None:
+            win.queue_draw()
+        return True
+
+    win.show_all()
+    gdk_window = win.get_window()
+    if gdk_window is not None:
+        gdk_window.set_cursor(cursors[0])
+        gdk_window.focus(Gdk.CURRENT_TIME)
+    seat = display.get_default_seat() if display is not None else None
+    if seat is not None and gdk_window is not None:
+        seat.grab(
+            gdk_window,
+            Gdk.SeatCapabilities.POINTER | Gdk.SeatCapabilities.KEYBOARD,
+            False,
+            None,
+            None,
+            None,
+            None,
+        )
+    send({"ok": True, "event": "status", "text": "Click one corner."})
+    timer = GLib.timeout_add(180, animate)
+    Gtk.main()
+    GLib.source_remove(timer)
+    if seat is not None:
+        seat.ungrab()
+    win.hide()
+    while Gtk.events_pending():
+        Gtk.main_iteration_do(False)
+    Gdk.flush()
+    if outcome["rect"] is not None:
+        time.sleep(0.05)
+    win.destroy()
+    if outcome["cancel"] or outcome["rect"] is None:
+        return None
+    return outcome["rect"]
 
 
 def main():
@@ -79,7 +284,19 @@ def main():
             send({"ok": False, "error": "bad message"})
             continue
         try:
-            capture(message)
+            if message.get("cmd") == "select":
+                rect = select_rect()
+                if rect is None:
+                    send({"ok": False, "error": "cancel"})
+                    continue
+                grab_rect(rect[0], rect[1], rect[2], rect[3])
+                continue
+            grab_rect(
+                int(message["x"]),
+                int(message["y"]),
+                int(message["width"]),
+                int(message["height"]),
+            )
         except Exception as error:
             send({"ok": False, "error": str(error)})
 
