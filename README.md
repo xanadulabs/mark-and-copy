@@ -29,3 +29,7 @@ The toolbar button opens the menu. Highlighter or Bingo starts a screen selectio
    ```
 
 Firefox loads a replaced extension file only after a full quit and restart.
+
+## License
+
+MIT. See LICENSE.
