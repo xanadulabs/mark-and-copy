@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Mark and Copy",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "description": "Select part of the screen, mark it, and copy the picture.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "mark-and-copy@hierophant.local",
+      "id": "mark-and-copy@xanadulabs.com",
       "strict_min_version": "128.0"
     }
   },

@@ -4,6 +4,6 @@
   "path": "@CAPTURE_PY@",
   "type": "stdio",
   "allowed_extensions": [
-    "mark-and-copy@hierophant.local"
+    "mark-and-copy@xanadulabs.com"
   ]
 }
